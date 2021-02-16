@@ -12,9 +12,7 @@
 #import <React/RCTBridge.h>
 #import <React/RCTUtils.h>
 
-#if TARGET_OS_IOS
 #import <LocalAuthentication/LAContext.h>
-#endif
 #import <UIKit/UIKit.h>
 
 @implementation RNKeychainManager
@@ -154,7 +152,6 @@ NSString *authenticationPromptValue(NSDictionary *options)
 #define kBiometryTypeTouchID @"TouchID"
 #define kBiometryTypeFaceID @"FaceID"
 
-#if TARGET_OS_IOS
 LAPolicy authPolicy(NSDictionary *options)
 {
   if (options && options[kAuthenticationType]) {
@@ -164,7 +161,6 @@ LAPolicy authPolicy(NSDictionary *options)
   }
   return LAPolicyDeviceOwnerAuthentication;
 }
-#endif
 
 SecAccessControlCreateFlags accessControlValue(NSDictionary *options)
 {
@@ -196,6 +192,7 @@ SecAccessControlCreateFlags accessControlValue(NSDictionary *options)
 
 - (void)insertKeychainEntry:(NSDictionary *)attributes
                 withOptions:(NSDictionary * __nullable)options
+                 value:(NSString *)value
                    resolver:(RCTPromiseResolveBlock)resolve
                    rejecter:(RCTPromiseRejectBlock)reject
 {
@@ -236,16 +233,21 @@ SecAccessControlCreateFlags accessControlValue(NSDictionary *options)
 
   OSStatus osStatus = SecItemAdd((__bridge CFDictionaryRef) attributes, NULL);
 
-  if (osStatus != noErr && osStatus != errSecItemNotFound) {
-    NSError *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:osStatus userInfo:nil];
-    return rejectWithError(reject, error);
-  } else {
-    NSString *service = serviceValue(options);
-    return resolve(@{
-      @"service": service,
-      @"storage": @"keychain"
-    });
-  }
+    if (osStatus == errSecSuccess) {
+        return resolve(value);
+        
+    }
+    if (osStatus == errSecDuplicateItem && ![value isEqual:NULL]) {
+           NSData* valueData = [value dataUsingEncoding:NSUTF8StringEncoding];
+           NSDictionary *update = @{(__bridge id)kSecValueData:valueData};
+           osStatus = SecItemUpdate((__bridge CFDictionaryRef)attributes,
+                                    (__bridge CFDictionaryRef)update);
+       }
+       if (osStatus != noErr) {
+           NSError *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:osStatus userInfo:nil];
+              return rejectWithError(reject, error);
+       }
+    resolve(value);
 }
 
 - (OSStatus)deletePasswordsForService:(NSString *)service
@@ -313,6 +315,64 @@ RCT_EXPORT_METHOD(getSupportedBiometryType:(RCTPromiseResolveBlock)resolve
 }
 #endif
 
+RCT_EXPORT_METHOD(setItem:(NSString *)key
+                  value:(NSString *)value
+                  options:(NSDictionary *)options
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  NSString *service = serviceValue(options);
+  NSDictionary *attributes = attributes = @{
+    (__bridge NSString *)kSecClass: (__bridge id)(kSecClassGenericPassword),
+    (__bridge NSString *)kSecAttrService: service,
+    (__bridge NSString *)kSecAttrAccount: key,
+    (__bridge NSString *)kSecValueData: [value dataUsingEncoding:NSUTF8StringEncoding]
+  };
+
+    [self insertKeychainEntry:attributes withOptions:options value:value resolver:resolve rejecter:reject];
+}
+
+RCT_EXPORT_METHOD(getItem: (NSString *)key
+                  options: (NSDictionary * __nullable)options
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  NSString *service = serviceValue(options);
+  NSString *authenticationPrompt = authenticationPromptValue(options);
+
+  NSDictionary *query = @{
+    (__bridge NSString *)kSecClass: (__bridge id)(kSecClassGenericPassword),
+    (__bridge NSString *)kSecAttrService: service,
+    (__bridge NSString *)kSecAttrAccount: key,
+    (__bridge NSString *)kSecReturnAttributes: (__bridge id)kCFBooleanTrue,
+    (__bridge NSString *)kSecReturnData: (__bridge id)kCFBooleanTrue,
+    (__bridge NSString *)kSecMatchLimit: (__bridge NSString *)kSecMatchLimitOne,
+    (__bridge NSString *)kSecUseOperationPrompt: authenticationPrompt
+  };
+
+  // Look up service in the keychain
+  NSDictionary *found = nil;
+  CFTypeRef foundTypeRef = NULL;
+  OSStatus osStatus = SecItemCopyMatching((__bridge CFDictionaryRef) query, (CFTypeRef*)&foundTypeRef);
+
+  if (osStatus != noErr && osStatus != errSecItemNotFound) {
+    NSError *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:osStatus userInfo:nil];
+    return rejectWithError(reject, error);
+  }
+
+  found = (__bridge NSDictionary*)(foundTypeRef);
+  if (!found) {
+    return resolve(@(NO));
+  }
+
+  // Found
+//  NSString *username = (NSString *) [found objectForKey:(__bridge id)(kSecAttrAccount)];
+  NSString *value = [[NSString alloc] initWithData:[found objectForKey:(__bridge id)(kSecValueData)] encoding:NSUTF8StringEncoding];
+
+  CFRelease(foundTypeRef);
+  return resolve(value);
+}
+
 RCT_EXPORT_METHOD(setGenericPasswordForOptions:(NSDictionary *)options
                   withUsername:(NSString *)username
                   withPassword:(NSString *)password
@@ -329,7 +389,7 @@ RCT_EXPORT_METHOD(setGenericPasswordForOptions:(NSDictionary *)options
 
   [self deletePasswordsForService:service];
 
-  [self insertKeychainEntry:attributes withOptions:options resolver:resolve rejecter:reject];
+    [self insertKeychainEntry:attributes withOptions:options value:@"" resolver:resolve rejecter:reject];
 }
 
 RCT_EXPORT_METHOD(getGenericPasswordForOptions:(NSDictionary * __nullable)options
@@ -408,7 +468,7 @@ RCT_EXPORT_METHOD(setInternetCredentialsForServer:(NSString *)server
     (__bridge NSString *)kSecValueData: [password dataUsingEncoding:NSUTF8StringEncoding]
   };
 
-  [self insertKeychainEntry:attributes withOptions:options resolver:resolve rejecter:reject];
+    [self insertKeychainEntry:attributes withOptions:options value: @"" resolver:resolve rejecter:reject];
 }
 
 RCT_EXPORT_METHOD(hasInternetCredentialsForServer:(NSString *)server
