@@ -441,9 +441,7 @@ RCT_EXPORT_METHOD(setGenericPasswordForOptions:(NSDictionary *)options
     (__bridge NSString *)kSecValueData: [password dataUsingEncoding:NSUTF8StringEncoding]
   };
 
-  [self deletePasswordsForService:service];
-
-    [self insertKeychainEntry:attributes withOptions:options resolver:resolve rejecter:reject];
+    [self insertKeychainEntryForKey:attributes withOptions:options value:password resolver:resolve rejecter:reject];
 }
 
 RCT_EXPORT_METHOD(getGenericPasswordForOptions:(NSDictionary * __nullable)options
