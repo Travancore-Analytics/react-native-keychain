@@ -192,6 +192,60 @@ SecAccessControlCreateFlags accessControlValue(NSDictionary *options)
 
 - (void)insertKeychainEntry:(NSDictionary *)attributes
                 withOptions:(NSDictionary * __nullable)options
+                   resolver:(RCTPromiseResolveBlock)resolve
+                   rejecter:(RCTPromiseRejectBlock)reject
+{
+  NSString *accessGroup = accessGroupValue(options);
+  CFStringRef accessible = accessibleValue(options);
+  SecAccessControlCreateFlags accessControl = accessControlValue(options);
+
+  NSMutableDictionary *mAttributes = attributes.mutableCopy;
+
+  if (accessControl) {
+    NSError *aerr = nil;
+#if TARGET_OS_IOS
+    BOOL canAuthenticate = [[LAContext new] canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication error:&aerr];
+    if (aerr || !canAuthenticate) {
+      return rejectWithError(reject, aerr);
+    }
+#endif
+
+    CFErrorRef error = NULL;
+    SecAccessControlRef sacRef = SecAccessControlCreateWithFlags(kCFAllocatorDefault,
+                                                                 accessible,
+                                                                 accessControl,
+                                                                 &error);
+
+    if (error) {
+      return rejectWithError(reject, aerr);
+    }
+    mAttributes[(__bridge NSString *)kSecAttrAccessControl] = (__bridge id)sacRef;
+  } else {
+    mAttributes[(__bridge NSString *)kSecAttrAccessible] = (__bridge id)accessible;
+  }
+
+  if (accessGroup != nil) {
+    mAttributes[(__bridge NSString *)kSecAttrAccessGroup] = accessGroup;
+  }
+
+  attributes = [NSDictionary dictionaryWithDictionary:mAttributes];
+
+  OSStatus osStatus = SecItemAdd((__bridge CFDictionaryRef) attributes, NULL);
+
+  if (osStatus != noErr && osStatus != errSecItemNotFound) {
+    NSError *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:osStatus userInfo:nil];
+    return rejectWithError(reject, error);
+  } else {
+    NSString *service = serviceValue(options);
+    return resolve(@{
+      @"service": service,
+      @"storage": @"keychain"
+    });
+  }
+}
+
+- (void)insertKeychainEntryForKey:(NSDictionary *)attributes
+                withOptions:(NSDictionary * __nullable)options
                  value:(NSString *)value
                    resolver:(RCTPromiseResolveBlock)resolve
                    rejecter:(RCTPromiseRejectBlock)reject
@@ -329,7 +383,7 @@ RCT_EXPORT_METHOD(setItem:(NSString *)key
     (__bridge NSString *)kSecValueData: [value dataUsingEncoding:NSUTF8StringEncoding]
   };
 
-    [self insertKeychainEntry:attributes withOptions:options value:value resolver:resolve rejecter:reject];
+    [self insertKeychainEntryForKey:attributes withOptions:options value:value resolver:resolve rejecter:reject];
 }
 
 RCT_EXPORT_METHOD(getItem: (NSString *)key
@@ -387,9 +441,9 @@ RCT_EXPORT_METHOD(setGenericPasswordForOptions:(NSDictionary *)options
     (__bridge NSString *)kSecValueData: [password dataUsingEncoding:NSUTF8StringEncoding]
   };
 
-//  [self deletePasswordsForService:service];
+  [self deletePasswordsForService:service];
 
-    [self insertKeychainEntry:attributes withOptions:options value:@"" resolver:resolve rejecter:reject];
+    [self insertKeychainEntry:attributes withOptions:options resolver:resolve rejecter:reject];
 }
 
 RCT_EXPORT_METHOD(getGenericPasswordForOptions:(NSDictionary * __nullable)options
@@ -468,7 +522,7 @@ RCT_EXPORT_METHOD(setInternetCredentialsForServer:(NSString *)server
     (__bridge NSString *)kSecValueData: [password dataUsingEncoding:NSUTF8StringEncoding]
   };
 
-    [self insertKeychainEntry:attributes withOptions:options value: @"" resolver:resolve rejecter:reject];
+    [self insertKeychainEntry:attributes withOptions:options resolver:resolve rejecter:reject];
 }
 
 RCT_EXPORT_METHOD(hasInternetCredentialsForServer:(NSString *)server
