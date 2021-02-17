@@ -93,6 +93,17 @@ declare module 'react-native-keychain' {
     options?: Options
   ): Promise<false | UserCredentials>;
 
+  function setItem(
+    key: string,
+    value: string,
+    options: Options,
+  ): Promise<string>;
+
+   function getItem(
+    key: string,
+    options: Options,
+  ): Promise<string>;
+
   function resetGenericPassword(options?: Options): Promise<boolean>;
 
   function hasInternetCredentials(server: string): Promise<false | Result>;
