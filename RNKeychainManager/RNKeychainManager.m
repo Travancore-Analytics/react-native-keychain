@@ -375,10 +375,8 @@ RCT_EXPORT_METHOD(setItem:(NSString *)key
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
-  NSString *service = serviceValue(options);
   NSDictionary *attributes = attributes = @{
     (__bridge NSString *)kSecClass: (__bridge id)(kSecClassGenericPassword),
-    (__bridge NSString *)kSecAttrService: service,
     (__bridge NSString *)kSecAttrAccount: key,
     (__bridge NSString *)kSecValueData: [value dataUsingEncoding:NSUTF8StringEncoding]
   };
@@ -391,12 +389,10 @@ RCT_EXPORT_METHOD(getItem: (NSString *)key
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
-  NSString *service = serviceValue(options);
   NSString *authenticationPrompt = authenticationPromptValue(options);
 
   NSDictionary *query = @{
     (__bridge NSString *)kSecClass: (__bridge id)(kSecClassGenericPassword),
-    (__bridge NSString *)kSecAttrService: service,
     (__bridge NSString *)kSecAttrAccount: key,
     (__bridge NSString *)kSecReturnAttributes: (__bridge id)kCFBooleanTrue,
     (__bridge NSString *)kSecReturnData: (__bridge id)kCFBooleanTrue,
@@ -441,7 +437,9 @@ RCT_EXPORT_METHOD(setGenericPasswordForOptions:(NSDictionary *)options
     (__bridge NSString *)kSecValueData: [password dataUsingEncoding:NSUTF8StringEncoding]
   };
 
-    [self insertKeychainEntryForKey:attributes withOptions:options value:password resolver:resolve rejecter:reject];
+  [self deletePasswordsForService:service];
+    
+[self insertKeychainEntry:attributes withOptions:options resolver:resolve rejecter:reject];
 }
 
 RCT_EXPORT_METHOD(getGenericPasswordForOptions:(NSDictionary * __nullable)options
