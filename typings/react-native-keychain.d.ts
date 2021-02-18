@@ -106,7 +106,7 @@ declare module 'react-native-keychain' {
 
   export declare function deleteItem(
     key: string,
-    options: RNSensitiveInfoOptions,
+    options: Options,
   ): Promise<null>;
   
   function resetGenericPassword(options?: Options): Promise<boolean>;
