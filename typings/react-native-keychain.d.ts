@@ -104,7 +104,7 @@ declare module 'react-native-keychain' {
     options: Options,
   ): Promise<string>;
 
-  export declare function deleteItem(
+   function deleteItem(
     key: string,
     options: Options,
   ): Promise<null>;
